@@ -1,0 +1,217 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn import metrics
+import statsmodels.api as sm
+from sklearn.ensemble import RandomForestClassifier
+
+DATA_T = pd.read_csv("TrainingDataset_2023Final.csv")
+
+def BAR(Key):
+    Temp =  DATA_T[[Key, 'responseVariable']]
+    D  = Temp.value_counts()
+    X = list(set(Temp[Key]))
+    Res = dict()
+    Y = list()
+    for x in X:
+        try:
+            Res[x] = (D[x][1]/D[x].sum())
+            Y.append(D[x][1]/D[x].sum())
+        except:
+            Res[x] = 0
+            Y.append(0)
+    plt.bar(X,Y)
+    return Res
+
+BAR("policyHolderAge") 
+#this bar graph gives us the buying ratio depending on the age. 
+
+plt.hist(DATA_T.policyHolderAge, bins = 72)
+plt.show()
+
+#Polynomial regression of this category is as follows.
+
+x = []
+y = []
+DICT = BAR("policyHolderAge")
+for i in DICT:
+    x.append(i)
+    y.append(DICT[i])
+Weight = DATA_T["policyHolderAge"].value_counts().sort_index()
+mymodel1 = np.poly1d(np.polyfit(x[:20], y[:20], 8, w=np.sqrt(Weight[:20])))
+mymodel2 = np.poly1d(np.polyfit(x[20:], y[20:], 3, w=np.sqrt(Weight[20:])))
+mymodel3 = np.poly1d(np.polyfit(x[50:], y[50:], 1, w=np.sqrt(Weight[50:])))
+plt.plot(x[:20],mymodel1(x[:20]), color = "red")
+plt.plot(x[19:61],mymodel2(x[19:61]), color = "green")
+plt.plot(x[60:],mymodel3(x[60:]), color = "red")
+
+def AGE(x,mymodel1,mymodel2,mymodel3):
+    if x <= 38:
+        return mymodel1(x)
+    elif x <= 68:
+        return mymodel2(x)
+    else:
+        return mymodel3(x)
+
+AGE(40,mymodel1,mymodel2,mymodel3)
+
+
+#The fitting for the 'homeInsurancePremium' is defined as a piecewise function as follows.
+
+def PROB(a,b):
+    Den = 0
+    Neu = 0
+    Temp =  DATA_T[['homeInsurancePremium', "responseVariable"]]
+    D = Temp.value_counts()
+    for i in range(a,b):
+        try:
+            Neu += D[i][1]
+        except:
+            pass
+        try:
+            Den += D[i].sum()
+        except:
+            pass   
+    return Neu/Den  
+def PREMIUM(DATA_T, x, L):
+    if x == 88:
+        return L[0]
+    elif x <= 600:
+        return L[1]
+    elif x <= 700:
+        return L[2]
+    elif x <= 800:
+        return L[3]
+    elif x <= 900:
+        return L[4]
+    elif x <= 1000:
+        return L[5]
+    elif x <= 1100:
+        return L[6]
+    elif x <= 1200:
+        return L[7]
+    elif x <= 1300:
+        return L[8]
+    elif x <= 1400:
+        return L[9]
+    elif x <= 1500:
+        return L[10]
+    elif x <= 1600:
+        return L[11]
+    elif x <= 1700:
+        return L[12]
+    elif x <= 1800:
+        return L[13]
+    elif x <= 1900:
+        return L[14]
+    elif x <= 2050:
+        return L[15]
+    elif x <= 2200:
+        return L[16]
+    elif x <= 2500:
+        return L[17]
+    elif x <= 8000:
+        return L[18]
+    else:
+        return 0.2
+
+
+L = [0.13078803981593792, PROB(200,600), PROB(600,800), PROB(750,850),  PROB(850,950), PROB(950,1050),
+        PROB(1050,1150), PROB(1150,1250), PROB(1250,1350), PROB(1350,1450), PROB(1450,1550), PROB(1550,1650),
+        PROB(1650,1750), PROB(1750,1850), PROB(1850,1950), PROB(1950,2250), PROB(2000,2400), PROB(2200,2900),
+        PROB(3000,90000)] 
+
+PREMIUM(DATA_T, 88, L)
+
+#average buying ratio
+Avg = sum(DATA_T['responseVariable'])/len(DATA_T['responseVariable'])
+
+
+def Prob(Sample_Prob, Sample_Size):
+    Avg = sum(DATA_T['responseVariable'])/len(DATA_T['responseVariable'])
+    if Sample_Size <= 1000:
+        x = (1000 - Sample_Size)/1000
+        return Avg * x**2 + Sample_Prob * (1-x)**2
+    else:
+        return Sample_Prob
+
+def Difference(Rate):
+    Avg = 18450/149870
+    return Rate - Avg
+
+
+#the Difference() makes the result less personal. Then we decrease the prediction mistake with the following function TS() by checking difference between the buying ratio and the average "Avg". 
+
+def TS(Key):
+    Res = DATA_T[[Key]].value_counts()
+    D = BAR(Key)
+    for d in D:
+        D[d] = Prob(D[d], Res[d])
+    return D
+
+#Conclude the modelling
+
+GENDER = TS("Gender")
+LICENSE = TS("hasCanadianDrivingLicense")
+AUTO = TS("hasAutoInsurance")
+PASTCLAIM = TS("hadVehicleClaimInPast")
+OWNER = TS("isOwner")
+RENT = TS("rentedVehicle")
+MORTGAGE = TS("hasMortgage")
+NB = TS("nbWeeksInsured")
+STATUS = TS("vehicleStatus")
+TERRITORY = TS("territory")
+CHANNEL = TS("saleChannel")
+def Score(DATA,GENDER,LICENSE,AUTO,PASTCLAIM,OWNER,RENT,MORTGAGE,NB,STATUS,L,TERRITORY,CHANNEL,mymodel1,mymodel2, mymodel3):
+    Res = 0
+    if DATA['hasAutoInsurance'] == 1 or DATA['hadVehicleClaimInPast'] == "No":
+        return 0
+    if DATA['hasMortgage']==1 and DATA['hasAutoInsurance']==1 and DATA['hadVehicleClaimInPast']== "No":
+        return 1
+    if DATA['hasMortgage']==1 and DATA['hasAutoInsurance']==1 and DATA["territory"] in {2,14,25,32,34}:
+        return 1
+    Res += Difference(GENDER[DATA['Gender']])  
+    Res += Difference(LICENSE[DATA['hasCanadianDrivingLicense']]) 
+    Res += Difference(AUTO[DATA['hasAutoInsurance']])
+    Res += Difference(PASTCLAIM[DATA['hadVehicleClaimInPast']]) 
+    Res += Difference(OWNER[DATA['isOwner']]) 
+    Res += Difference(RENT[DATA['rentedVehicle']]) 
+    Res += Difference(MORTGAGE[DATA['hasMortgage']]) 
+    Res += Difference(NB[DATA['nbWeeksInsured']]) 
+    Res += Difference(STATUS[DATA['vehicleStatus']]) 
+    Res += Difference(AGE((DATA['policyHolderAge']),mymodel1,mymodel2, mymodel3)) 
+    Res += Difference(PREMIUM(DATA_T, DATA["homeInsurancePremium"], L)) 
+    Res += Difference(TERRITORY[DATA['territory']])
+    Res += Difference(CHANNEL[DATA['saleChannel']])
+    if Res > 0:
+        return 1
+    else:
+        return 0
+
+
+PRED = [] #predict
+for i in range(len(DATA_T)):
+    PRED.append(Score(DATA_T.iloc[i],GENDER,LICENSE,AUTO,PASTCLAIM,OWNER,RENT,MORTGAGE,NB,STATUS,L,TERRITORY,CHANNEL,mymodel1,mymodel2, mymodel3))
+
+metrics.roc_auc_score(DATA_T[ 'responseVariable'], PRED)
+
+
+DATA_S = pd.read_csv("ScoringDataset_2023Final.csv")
+
+
+PRED_S= []
+CHANNEL[34] = Avg
+CHANNEL[149] = Avg #the data of Sale_Channel 34 and 149 is not in the training_data_set, so we default it as Avg, i.e. the avg buying probability.
+for i in range(len(DATA_S)):
+    PRED_S.append(Score(DATA_S.iloc[i],GENDER,LICENSE,AUTO,PASTCLAIM,OWNER,RENT,MORTGAGE,NB,STATUS,L,TERRITORY,CHANNEL,mymodel1,mymodel2, mymodel3))
+
+
+sum(PRED_S)/len(PRED_S)
+
+
+DATA_S["predictedResponseVariable"] = PRED_S
+
+
+DATA_S.to_csv('Scoring.csv', index=False)
